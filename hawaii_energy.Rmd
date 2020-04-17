@@ -5,10 +5,11 @@ date: "4/16/2020"
 output: html_document
 ---
 
-```{r setup, include=FALSE, message = F}
+```{r setup, include=FALSE, message = F, warning=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(janitor)
+library(readxl)
 
 new_indicators <- c('imports-crude', 'imports-distillate', 'imports-kerosene', 
                     'imports-residual_oil', 'imports-propane', 'imports-fuel_ethanol', 
@@ -34,6 +35,18 @@ edt <- read_csv('raw-data/dbedt_honolulu.csv') %>%
          dates = as.Date(paste(str_replace_all(dates, c('x' = '', '_' = '-')),'01', sep='-'))) %>%
   select(-c(area, ind_split)) %>%
   select(cat, type, year, month, value, units, everything())
+
+cap <- read_excel('raw-data/existcapacity_annual.xlsx', skip = 1) %>% 
+  clean_names() %>%
+  filter(state_code == 'HI')
+
+
+# This file is a MESS
+# read_csv('raw-data/total_load.csv', skip = 3)
+
+read_excel('raw-data/plancapacity_annual.xlsx', skip = 1) %>% 
+  clean_names() %>% 
+  filter(state_code == 'HI')
 ```
 
 ```{r}
@@ -56,4 +69,24 @@ edt %>% filter(cat == 'sold', type != 'streets', dates >= '2015-01-01') %>%
   theme(legend.position = 'top')
 ```
 
+```{r}
+all_power <- cap %>% 
+  filter(fuel_source != 'All Sources',
+         producer_type == 'Total Electric Power Industry') %>%
+  group_by(year) %>%
+  mutate(perc = nameplate_capacity_megawatts / sum(nameplate_capacity_megawatts))
+
+fuel_order <- all_power %>% 
+  filter(year == '2018') %>%
+  arrange(desc(perc)) %>% 
+  pull(fuel_source)
+
+all_power$fuel_source <- factor(all_power$fuel_source, fuel_order)
+
+all_power %>%
+  ggplot(aes(year, perc, fill = fuel_source)) +
+  # geom_col(position = 'fill', width = 1) +
+  geom_area() +
+  scale_fill_brewer(name = 'Fuel Source', palette = 'Paired')
+```
 
