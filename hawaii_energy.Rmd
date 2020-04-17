@@ -37,9 +37,23 @@ edt <- read_csv('raw-data/dbedt_honolulu.csv') %>%
 ```
 
 ```{r}
-edt %>% filter(cat == 'generation', type != 'total', dates >= '2015-01-01') %>%
-  ggplot(aes(dates, value, color = type)) +
-  geom_line()
+edt %>% filter(cat == 'sold', type != 'streets', dates >= '2015-01-01') %>%
+  ggplot(aes(dates, value, 
+             color = type, size = type)) +
+  geom_line() +
+  scale_size_manual(values = c(1.1,1.1,1.3),
+                    guide = F) +
+  scale_x_date(date_breaks = '1 year',
+               date_labels = '%Y') +
+  scale_y_continuous(breaks = seq(0,6,1.5)*10^8,labels = seq(0,600,150)) +
+  expand_limits(y = 0) +
+  labs(title = 'Hawaii Total Monthly Electricity Demand, Last 5 Years',
+       subtitle = 'Monthly demand is cyclical, peaking around the middle of the year',
+       y = 'Total Electricity (million kWh)',
+       x = 'Date',
+       color = 'Type') +
+  theme_minimal() +
+  theme(legend.position = 'top')
 ```
 
 
