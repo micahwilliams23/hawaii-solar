@@ -1,0 +1,45 @@
+---
+title: "Hawaii Electricity Usage"
+author: "Micah Williams"
+date: "4/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, message = F}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(janitor)
+
+new_indicators <- c('imports-crude', 'imports-distillate', 'imports-kerosene', 
+                    'imports-residual_oil', 'imports-propane', 'imports-fuel_ethanol', 
+                    'imports-other_refined', 'meters-total', 'sold-total', 
+                    'sold-residential', 'sold-commercial', 'sold-streets',
+                    'price-all', 'price-residential', 'price-commercial', 
+                    'price-streets', 'sent_to_grid-total', 'generation-total',
+                    'generation-steam', 'generation-diesel', 'generation-biodiesel',
+                    'generation-hydro_wind', 'generation-independent', 'used-stations')
+
+edt <- read_csv('raw-data/dbedt_honolulu.csv') %>% 
+  clean_names() %>%
+  slice(1:n() - 1) %>%
+  mutate(indicator = new_indicators,
+         ind_split = map(indicator, ~str_split(., '-')),
+         cat = map_chr(ind_split, ~.[[1]][1]),
+         type = map_chr(ind_split, ~.[[1]][2])) %>%
+  pivot_longer(cols = x2006_01:x2019_12,
+               names_to = 'dates',
+               values_to = 'value') %>%
+  mutate('year' = str_extract(dates, pattern = '\\d{4}'),
+         'month' = str_split(dates, pattern = '_')[[1]][2],
+         dates = as.Date(paste(str_replace_all(dates, c('x' = '', '_' = '-')),'01', sep='-'))) %>%
+  select(-c(area, ind_split)) %>%
+  select(cat, type, year, month, value, units, everything())
+```
+
+```{r}
+edt %>% filter(cat == 'generation', type != 'total', dates >= '2015-01-01') %>%
+  ggplot(aes(dates, value, color = type)) +
+  geom_line()
+```
+
+
