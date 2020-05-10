@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(janitor)
 library(readxl)
+library(RColorBrewer)
 
 new_indicators <- c('imports-crude', 'imports-distillate', 'imports-kerosene', 
                     'imports-residual_oil', 'imports-propane', 'imports-fuel_ethanol', 
@@ -36,46 +37,70 @@ edt <- read_csv('raw-data/dbedt_honolulu.csv') %>%
   select(-c(area, ind_split)) %>%
   select(cat, type, year, month, value, units, everything())
 
-cap <- read_excel('raw-data/existcapacity_annual.xlsx', skip = 1) %>% 
+cap.exi <- read_excel('raw-data/existcapacity_annual.xlsx', skip = 1) %>% 
   clean_names() %>%
-  filter(state_code == 'HI')
+  filter(state_code == 'HI') %>%
+  mutate('exist' = T)
 
-
-# This file is a MESS
+# This file is a MESS. Ignoring for now.
 # read_csv('raw-data/total_load.csv', skip = 3)
 
-read_excel('raw-data/plancapacity_annual.xlsx', skip = 1) %>% 
+cap.pln <- read_excel('raw-data/plancapacity_annual.xlsx', skip = 1) %>% 
   clean_names() %>% 
-  filter(state_code == 'HI')
+  filter(state_code == 'HI') %>%
+  mutate('exist' = F,
+         year = planned_year) %>%
+  select(-planned_year)
+
+capacity <- rbind(cap.exi, cap.pln)
 ```
 
-```{r}
-edt %>% filter(cat == 'sold', type != 'streets', dates >= '2015-01-01') %>%
+```{r, fig.width = 9}
+edt %>% filter(cat == 'sold', type != 'streets', dates >= '2006-01-01') %>%
   ggplot(aes(dates, value, 
              color = type, size = type)) +
-  geom_line() +
+  geom_line(alpha = 0.3) +
+  geom_smooth(se = F) +
   scale_size_manual(values = c(1.1,1.1,1.3),
                     guide = F) +
   scale_x_date(date_breaks = '1 year',
-               date_labels = '%Y') +
-  scale_y_continuous(breaks = seq(0,6,1.5)*10^8,labels = seq(0,600,150)) +
+               date_labels = '\'%y') +
+  scale_y_continuous(breaks = seq(0,6,1)*10^8,labels = seq(0,600,100)) +
   expand_limits(y = 0) +
-  labs(title = 'Hawaii Total Monthly Electricity Demand, Last 5 Years',
-       subtitle = 'Monthly demand is cyclical, peaking around the middle of the year',
-       y = 'Total Electricity (million kWh)',
-       x = 'Date',
-       color = 'Type') +
+  labs(title = 'Hawaii On-Grid Electricity Sales, 2006-2019',
+       subtitle = 'Total grid demand has dipped slightly over the last 14 years.\nYearly demand is roughly cyclical, peaking around the middle of the year.',
+       y = 'Total Consumption kWh)',
+       x = 'Year',
+       color = 'Type',
+       caption = 'Source: Hawaii Dep. of Business, Economic Development & Tourism') +
   theme_minimal() +
-  theme(legend.position = 'top')
+  theme(legend.position = c(0.5, 0.1),
+        legend.direction = 'horizontal',
+        legend.background = element_rect(fill = rgb(1,1,1,0.5), color = NA),
+        panel.grid.minor = element_blank())
+
+# ggsave('images/total_demand.png', height = 5, width = 9)
 ```
 
-```{r}
+```{r, fig.height=5, fig.width=9}
 all_power <- cap %>% 
   filter(fuel_source != 'All Sources',
          producer_type == 'Total Electric Power Industry') %>%
   group_by(year) %>%
   mutate(perc = nameplate_capacity_megawatts / sum(nameplate_capacity_megawatts))
 
+text_colors <- brewer.pal(9, 'Paired')[c(1,3,5)]
+
+power_highlights <- all_power %>%
+  filter(year %in% c(2010,2018),
+         fuel_source %in% c('Petroleum',
+                            'Solar Thermal and Photovoltaic',
+                            'Wind')) %>%
+  select(year, perc, fuel_source, ncm = nameplate_capacity_megawatts) %>%
+  mutate(color = text_colors, ncm = as.character(round(ncm)),
+         xpos = if_else(year == 2018, year + 0.1, year - 0.1))
+         # xpos = year)
+  
 fuel_order <- all_power %>% 
   filter(year == '2018') %>%
   arrange(desc(perc)) %>% 
@@ -84,9 +109,29 @@ fuel_order <- all_power %>%
 all_power$fuel_source <- factor(all_power$fuel_source, fuel_order)
 
 all_power %>%
-  ggplot(aes(year, perc, fill = fuel_source)) +
+  filter(year >= 2010) %>%
+  ggplot(aes(year, perc, color = fuel_source)) +
   # geom_col(position = 'fill', width = 1) +
-  geom_area() +
-  scale_fill_brewer(name = 'Fuel Source', palette = 'Paired')
+  geom_smooth(method = 'loess', se = F, span = 1) +
+  scale_color_brewer(name = 'Fuel Source', palette = 'Paired') +
+  theme_minimal() +
+  theme(panel.grid.minor.x = element_blank(),
+        legend.background = element_rect(fill = '#ffffff8d', color = NA)) +
+  scale_x_continuous(limits = c(2009.2,2018.75),
+                     breaks = seq(2010,2018),
+                     labels = paste('\'', seq(10,18), sep='')) +
+  scale_y_continuous(labels = paste(seq(0,80,20), '%', sep='')) +
+  labs(y = 'Percent of Total Generation', x = 'Year',
+       title = 'On-Grid Electricity Generation as Percentage of Total, by Fuel Source',
+       subtitle = 'Labels show change in generation capacity from 2010 to 2018 for petroleum, solar, and wind.', 
+       caption = 'Source: US Energy Information Agency') +
+  geom_text(aes(xpos, perc,
+                label = paste(ncm, 'MW'),
+            vjust = if_else(fuel_source == 'Wind', 0.2, 0.3),
+            hjust = if_else(year == 2018, 0, 1)),
+            data = power_highlights,
+            show.legend = F)
+
+ggsave('images/generation_fuels.png', width = 9, height = 5, units = 'in')
 ```
 
